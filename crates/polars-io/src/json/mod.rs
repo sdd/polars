@@ -76,7 +76,6 @@ use polars_json::json::write::FallibleStreamingIterator;
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use simd_json::BorrowedValue;
-
 use crate::mmap::{MmapBytesReader, ReaderBytes};
 use crate::prelude::*;
 
@@ -106,6 +105,8 @@ pub enum JsonFormat {
     ///
     /// It is recommended to use the file extension `.jsonl` when saving as JSON Lines.
     JsonLines,
+    /// A single JSON object containing each DataFrame Series as an array.
+    JsonColumnar,
 }
 
 /// Writes a DataFrame to JSON.
@@ -143,30 +144,41 @@ where
     }
 
     fn finish(&mut self, df: &mut DataFrame) -> PolarsResult<()> {
-        df.align_chunks_par();
-        let fields = df
-            .iter()
-            .map(|s| {
-                #[cfg(feature = "object")]
-                polars_ensure!(!matches!(s.dtype(), DataType::Object(_, _)), ComputeError: "cannot write 'Object' datatype to json");
-                Ok(s.field().to_arrow(CompatLevel::newest()))
-            })
-            .collect::<PolarsResult<Vec<_>>>()?;
-        let batches = df
-            .iter_chunks(CompatLevel::newest(), false)
-            .map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
+        if matches!(self.json_format, JsonFormat::JsonColumnar) {
 
-        match self.json_format {
-            JsonFormat::JsonLines => {
-                let serializer = polars_json::ndjson::write::Serializer::new(batches, vec![]);
-                let writer =
-                    polars_json::ndjson::write::FileWriter::new(&mut self.buffer, serializer);
-                writer.collect::<PolarsResult<()>>()?;
-            },
-            JsonFormat::Json => {
-                let serializer = polars_json::json::write::Serializer::new(batches, vec![]);
-                polars_json::json::write::write(&mut self.buffer, serializer)?;
-            },
+            polars_json::json_columnar::write::write(&mut self.buffer, df)?;
+
+            return Ok(());
+        } else {
+
+            df.align_chunks_par();
+
+            let fields = df
+                .iter()
+                .map(|s| {
+                    #[cfg(feature = "object")]
+                    polars_ensure!(!matches!(s.dtype(), DataType::Object(_, _)), ComputeError: "cannot write 'Object' datatype to json");
+                    Ok(s.field().to_arrow(CompatLevel::newest()))
+                })
+                .collect::<PolarsResult<Vec<_>>>()?;
+
+            let batches = df
+                .iter_chunks(CompatLevel::newest(), false)
+                .map(|chunk| Ok(Box::new(chunk_to_struct(chunk, fields.clone())) as ArrayRef));
+
+            match self.json_format {
+                JsonFormat::JsonLines => {
+                    let serializer = polars_json::ndjson::write::Serializer::new(batches, vec![]);
+                    let writer =
+                        polars_json::ndjson::write::FileWriter::new(&mut self.buffer, serializer);
+                    writer.collect::<PolarsResult<()>>()?;
+                },
+                JsonFormat::Json => {
+                    let serializer = polars_json::json::write::Serializer::new(batches, vec![]);
+                    polars_json::json::write::write(&mut self.buffer, serializer)?;
+                },
+                JsonFormat::JsonColumnar => unreachable!()
+            }
         }
 
         Ok(())
@@ -269,6 +281,7 @@ where
         let bytes = remove_bom(pre_rb.deref())?;
         let rb = ReaderBytes::Borrowed(bytes);
         let out = match self.json_format {
+            JsonFormat::JsonColumnar => polars_bail!(InvalidOperation: "can't deserialize columnar yet"),
             JsonFormat::Json => {
                 polars_ensure!(!self.ignore_errors, InvalidOperation: "'ignore_errors' only supported in ndjson");
                 let mut bytes = rb.deref().to_vec();

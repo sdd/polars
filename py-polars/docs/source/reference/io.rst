@@ -96,6 +96,7 @@ JSON
    scan_ndjson
    DataFrame.write_json
    DataFrame.write_ndjson
+   DataFrame.write_json_columnar
    LazyFrame.sink_ndjson
 
 Parquet

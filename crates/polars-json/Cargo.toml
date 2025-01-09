@@ -10,6 +10,7 @@ description = "JSON related logic for the Polars DataFrame library"
 
 [dependencies]
 polars-compute = { workspace = true, features = ["cast"] }
+polars-core = { workspace = true }
 polars-error = { workspace = true }
 polars-utils = { workspace = true }
 

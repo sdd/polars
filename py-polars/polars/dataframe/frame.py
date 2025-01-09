@@ -2764,6 +2764,59 @@ class DataFrame:
             return None
 
     @overload
+    def write_json_columnar(self, file: None = ...) -> str: ...
+
+    @overload
+    def write_json_columnar(self, file: IOBase | str | Path) -> None: ...
+
+    def write_json_columnar(self, file: IOBase | str | Path | None = None) -> str | None:
+        """
+        Serialize to columnar JSON representation.
+
+        Parameters
+        ----------
+        file
+            File path or writable file-like object to which the result will be written.
+            If set to `None` (default), the output is returned as a string instead.
+
+        See Also
+        --------
+        DataFrame.write_json
+        DataFrame.write_ndjson
+
+        Examples
+        --------
+        >>> df = pl.DataFrame(
+        ...     {
+        ...         "foo": [1, 2, 3],
+        ...         "bar": [6, 7, 8],
+        ...     }
+        ... )
+        >>> df.write_json_columnar()
+        '{"foo":[1,2,3],"bar":[6,7,8]}]'
+        """
+
+        def write_json_columnar_to_string() -> str:
+            with BytesIO() as buf:
+                self._df.write_json_columnar(buf)
+                json_bytes = buf.getvalue()
+            return json_bytes.decode("utf8")
+
+        if file is None:
+            return write_json_columnar_to_string()
+        elif isinstance(file, StringIO):
+            json_str = write_json_columnar_to_string()
+            file.write(json_str)
+            return None
+        elif isinstance(file, (str, Path)):
+            file = normalize_filepath(file)
+            self._df.write_json_columnar(file)
+            return None
+        else:
+            self._df.write_json_columnar(file)
+            return None
+
+    @overload
     def write_csv(
         self,
         file: None = None,

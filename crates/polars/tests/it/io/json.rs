@@ -4,7 +4,7 @@ use std::num::NonZeroUsize;
 use super::*;
 
 #[test]
-fn read_json() {
+fn read_and_write_json() {
     let basic_json = r#"{"a":1, "b":2.0, "c":false, "d":"4"}
 {"a":-10, "b":-3.5, "c":true, "d":"4"}
 {"a":2, "b":0.6, "c":false, "d":"text"}
@@ -19,7 +19,7 @@ fn read_json() {
 {"a":100000000000000, "b":0.6, "c":false, "d":"text"}
 "#;
     let file = Cursor::new(basic_json);
-    let df = JsonReader::new(file)
+    let mut df = JsonReader::new(file)
         .infer_schema_len(NonZeroUsize::new(3))
         .with_json_format(JsonFormat::JsonLines)
         .with_batch_size(NonZeroUsize::new(3).unwrap())
@@ -28,7 +28,54 @@ fn read_json() {
     assert_eq!("a", df.get_columns()[0].name().as_str());
     assert_eq!("d", df.get_columns()[3].name().as_str());
     assert_eq!((12, 4), df.shape());
+
+    let mut buf = vec![];
+    let mut writer = JsonWriter::new(&mut buf)
+        .with_json_format(JsonFormat::JsonLines);
+
+    writer.finish(&mut df).unwrap();
+
+    assert_eq!(String::from_utf8(buf).unwrap(), basic_json);
 }
+
+#[test]
+fn write_json_columnar() {
+    let basic_json = r#"{
+    {"a":1, "b":2.0, "c":false, "d":"4"}
+{"a":-10, "b":-3.5, "c":true, "d":"4"}
+{"a":2, "b":0.6, "c":false, "d":"text"}
+{"a":1, "b":2.0, "c":false, "d":"4"}
+{"a":7, "b":-3.5, "c":true, "d":"4"}
+{"a":1, "b":0.6, "c":false, "d":"text"}
+{"a":1, "b":2.0, "c":false, "d":"4"}
+{"a":5, "b":-3.5, "c":true, "d":"4"}
+{"a":1, "b":0.6, "c":false, "d":"text"}
+{"a":1, "b":2.0, "c":false, "d":"4"}
+{"a":1, "b":-3.5, "c":true, "d":"4"}
+{"a":100000000000000, "b":0.6, "c":false, "d":"text"}
+"#;
+    let file = Cursor::new(basic_json);
+    let mut df = JsonReader::new(file)
+        .infer_schema_len(NonZeroUsize::new(3))
+        .with_json_format(JsonFormat::JsonLines)
+        .with_batch_size(NonZeroUsize::new(3).unwrap())
+        .finish()
+        .unwrap();
+
+    let mut buf = vec![];
+    let mut writer = JsonWriter::new(&mut buf)
+        .with_json_format(JsonFormat::JsonColumnar);
+
+    writer.finish(&mut df).unwrap();
+
+    let expected = r#"{"a":[1,-10,2,1,7,1,1,5,1,1,100000000000000],"b":[2.0,-3.5,0.6,2.0,-3.5,0.6,2.0,-3.5,0.6,2.0,-3.5],"c":[false,true,false,false,true,false,false,true,false,false,true,false],"d":["4","4","text","4","4","text","4","4","text","4","4","text"]}"#;
+
+    assert_eq!(String::from_utf8(buf).unwrap(), expected);
+
+}
+
+
+
 #[test]
 fn read_json_with_whitespace() {
     let basic_json = r#"{   "a":1, "b":2.0, "c"   :false  , "d":"4"}

@@ -515,6 +515,19 @@ impl PyDataFrame {
         Ok(())
     }
 
+    #[cfg(feature = "json")]
+    pub fn write_json_columnar(&mut self, py_f: PyObject) -> PyResult<()> {
+        let file = BufWriter::new(get_file_like(py_f, true)?);
+
+        // TODO: Cloud support
+
+        JsonWriter::new(file)
+            .with_json_format(JsonFormat::JsonColumnar)
+            .finish(&mut self.df)
+            .map_err(PyPolarsErr::from)?;
+        Ok(())
+    }
+
     #[cfg(feature = "ipc")]
     #[pyo3(signature = (
         py_f, compression, compat_level, cloud_options, credential_provider, retries

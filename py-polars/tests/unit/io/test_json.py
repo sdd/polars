@@ -66,6 +66,44 @@ def test_write_json_decimal() -> None:
     assert value == """[{"a":"1.00"},{"a":"2.00"},{"a":null}]"""
 
 
+def test_write_json_columnar() -> None:
+    df = pl.DataFrame({"a": [1, 2, 3], "b": ["a", "b", None]})
+    out = df.write_json_columnar()
+    assert out == '{"a":[1,2,3],"b":["a","b",null]}'
+
+
+def test_write_json_columnar_categoricals() -> None:
+    data = {"column": ["test1", "test2", "test3", "test4"]}
+    df = pl.DataFrame(data).with_columns(pl.col("column").cast(pl.Categorical))
+    expected = (
+        '{"column":["test1","test2","test3","test4"]}'
+    )
+    assert df.write_json_columnar() == expected
+
+
+def test_write_json_duration() -> None:
+    df = pl.DataFrame(
+        {
+            "a": pl.Series(
+                [91762939, 91762890, 6020836], dtype=pl.Duration(time_unit="ms")
+            )
+        }
+    )
+
+    # we don't guarantee a format, just round-circling
+    value = df.write_json_columnar()
+    expected = '{"a":["PT91762.939S","PT91762.89S","PT6020.836S"]}'
+    assert value == expected
+
+
+def test_write_json_decimal() -> None:
+    df = pl.DataFrame({"a": pl.Series([D("1.00"), D("2.00"), None])})
+
+    # we don't guarantee a format, just round-circling
+    value = df.write_json_columnar()
+    assert value == """{"a":["1.00","2.00",null]}"""
+
+
 def test_json_infer_schema_length_11148() -> None:
     response = [{"col1": 1}] * 2 + [{"col1": 1, "col2": 2}] * 1
     with pytest.raises(
